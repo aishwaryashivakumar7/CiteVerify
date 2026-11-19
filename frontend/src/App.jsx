@@ -1,0 +1,250 @@
+
+import { useState } from "react";
+import "./App.css";
+
+const demoResults = [
+  {
+    claim: "AI can improve student learning outcomes.",
+    status: "Supported",
+    evidence:
+      "The study reported improved learning outcomes in the evaluated group.",
+    highlight: "improved learning outcomes",
+    explanation: "The example evidence supports the general claim."
+  },
+  {
+    claim: "AI increases examination scores by exactly 40%.",
+    status: "Partially supported",
+    evidence:
+      "The study reported improvement, but did not establish a 40% increase.",
+    highlight: "did not establish a 40% increase",
+    explanation: "The exact percentage is not supported."
+  },
+  {
+    claim: "AI completely replaces teachers.",
+    status: "Needs review",
+    evidence: "",
+    highlight: "",
+    explanation: "No original source has been checked yet."
+  }
+];
+
+function HighlightEvidence({ text, highlight }) {
+  if (!highlight || !text.includes(highlight)) {
+    return <p>{text || "Evidence unavailable."}</p>;
+  }
+
+  const index = text.indexOf(highlight);
+
+  return (
+    <p>
+      {text.slice(0, index)}
+      <mark>{highlight}</mark>
+      {text.slice(index + highlight.length)}
+    </p>
+  );
+}
+
+function App() {
+  const [file, setFile] = useState(null);
+  const [showResults, setShowResults] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  function handleFileChange(event) {
+    const selected = event.target.files[0];
+
+    setShowResults(false);
+    setError("");
+    setFile(null);
+
+    if (!selected) return;
+
+    if (
+      selected.type !== "application/pdf" &&
+      !selected.name.toLowerCase().endsWith(".pdf")
+    ) {
+      setError("❌ Please upload a PDF file only.");
+      event.target.value = "";
+      return;
+    }
+
+    if (selected.size > 10 * 1024 * 1024) {
+      setError("❌ PDF must be smaller than 10 MB.");
+      event.target.value = "";
+      return;
+    }
+
+    setFile(selected);
+  }
+
+  function handleVerify() {
+    if (!file || loading) return;
+
+    setShowResults(false);
+    setLoading(true);
+
+    setTimeout(() => {
+      setLoading(false);
+      setShowResults(true);
+    }, 3000);
+  }
+
+  function downloadReport() {
+    const report = {
+      project: "CiteVerify",
+      note: "DEMO DATA ONLY - Not verified against the uploaded PDF",
+      generatedAt: new Date().toISOString(),
+      results: demoResults
+    };
+
+    const blob = new Blob(
+      [JSON.stringify(report, null, 2)],
+      { type: "application/json" }
+    );
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = "citeverify-demo-report.json";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="app">
+      <h1>🔍 CiteVerify</h1>
+      <h2>Don't Just Cite It. Prove It.</h2>
+
+      <p>
+        AI-Powered Scientific Claim and Citation
+        Verification System
+      </p>
+
+      <section className="upload-section">
+        <h3>📄 Upload Research Paper</h3>
+
+        <input
+          type="file"
+          accept=".pdf,application/pdf"
+          onChange={handleFileChange}
+        />
+
+        {error && (
+          <p className="error-message" role="alert">
+            {error}
+          </p>
+        )}
+
+        {file && (
+          <p>
+            Selected: <strong>{file.name}</strong>
+          </p>
+        )}
+
+        <button
+          disabled={!file || loading}
+          onClick={handleVerify}
+        >
+          {loading
+            ? "Analyzing..."
+            : "Preview Verification Dashboard"}
+        </button>
+
+        {loading && (
+          <div className="loading-container" role="status">
+            <div className="spinner"></div>
+            <h3>🔍 Analyzing Research Paper...</h3>
+            <p>Preparing sample verification results...</p>
+          </div>
+        )}
+      </section>
+
+      {/* VERIFICATION RESULTS */}
+      {showResults && (
+        <section className="results">
+          <h2>📊 Verification Results</h2>
+
+          <p className="demo-notice">
+            DEMO DATA ONLY — These results are not
+            generated from the uploaded PDF.
+          </p>
+
+          <div className="stats">
+            <div>3 Claims</div>
+            <div>1 Supported</div>
+            <div>2 Need Attention</div>
+          </div>
+
+          {demoResults.map((result, index) => (
+            <div className="result-card" key={index}>
+              <h3>Claim {index + 1}</h3>
+
+              <p>{result.claim}</p>
+
+              <span
+                className={
+                  "status " +
+                  result.status
+                    .toLowerCase()
+                    .replaceAll(" ", "-")
+                }
+              >
+                {result.status}
+              </span>
+
+              <h4>📌 Evidence</h4>
+
+              <HighlightEvidence
+                text={result.evidence}
+                highlight={result.highlight}
+              />
+
+              <p>
+                <strong>Explanation:</strong>{" "}
+                {result.explanation}
+              </p>
+            </div>
+          ))}
+
+          <div className="download-section">
+            <h3>📥 Verification Report</h3>
+
+            <p>
+              Download the sample verification results
+              for your hackathon demonstration.
+            </p>
+
+            <button onClick={downloadReport}>
+              ⬇ Download Verification Report
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* CINEMATIC RESEARCH STORY SECTION */}
+      <section className="story-section">
+        <div className="story-animation" aria-hidden="true">
+          <div className="story-halo"></div>
+
+          <div className="story-paper">
+            <div className="story-paper-lines"></div>
+            <div className="story-check">✓</div>
+          </div>
+        </div>
+
+        <h2>Every claim has a story.</h2>
+
+        <p>
+          Explore the relationship between
+          scientific claims and their evidence.
+        </p>
+      </section>
+    </div>
+  );
+}
+
+export default App;
