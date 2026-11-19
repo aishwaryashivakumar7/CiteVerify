@@ -59,10 +59,13 @@ def get_saved_papers():
         return []
 def save_document(document):
     try:
-        documents_collection.insert_one(document)
+        result = documents_collection.insert_one(document)
         print("Document saved successfully!")
+        return str(result.inserted_id)
+
     except Exception as error:
         print("Error saving document:", error)
+        return None
 def get_saved_documents():
     try:
         documents = list(documents_collection.find({}))
@@ -90,3 +93,15 @@ def get_document_by_id(document_id):
     except Exception as error:
         print("Error retrieving document:", error)
         return None
+        
+def update_document(document_id, update_data):
+    try:
+        result = documents_collection.update_one(
+            {"_id": ObjectId(document_id)},
+            {"$set": update_data}
+        )
+        return result.modified_count > 0
+
+    except Exception as error:
+        print("Error updating document:", error)
+        return False

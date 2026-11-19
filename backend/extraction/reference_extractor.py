@@ -5,17 +5,18 @@ from citation_extractor import Citation
 
 
 REFERENCE_HEADING_RE = re.compile(
-    r"^\s*(?:\d+\.?\s+)?(?:references|bibliography|works cited)\s*$",
+    r"^\s*(?:\d+\.?\s*)?(?:references|bibliography|works cited)\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 
 NUMBERED_REFERENCE_RE = re.compile(
-    r"^\s*\[(?P<number>\d+)\]\s*(?P<body>.+?)(?=^\s*\[\d+\]\s|\Z)",
+    r"^\s*(?:\[(?P<bracket>\d+)\]|(?P<plain>\d+)\.)\s*"
+    r"(?P<body>.+?)(?=^\s*(?:\[\d+\]|\d+\.)\s|\Z)",
     re.MULTILINE | re.DOTALL,
 )
 
 DOI_RE = re.compile(
-    r"\b(?:doi:\s*)?(10\.\d{4,9}/[-._;()/:a-z0-9]+)",
+    r"\b10\.\d{4,9}/[-._;()/:A-Z0-9]+",
     re.IGNORECASE,
 )
 
@@ -24,13 +25,7 @@ URL_RE = re.compile(
     re.IGNORECASE,
 )
 
-YEAR_RE = re.compile(
-    r"\b((?:19|20)\d{2}[a-z]?)\b"
-)
-
-AUTHOR_RE = re.compile(
-    r"^\s*([A-Z][A-Za-z'\-]+)"
-)
+YEAR_RE = re.compile(r"\b((?:19|20)\d{2}[a-z]?)\b")
 
 
 @dataclass(frozen=True)
@@ -59,34 +54,35 @@ def get_reference_section(text: str) -> str:
 
 
 def parse_authors_and_title(raw: str, year_match):
-    """
-    Example:
-    Ahmed, N. and Brown, T. (2025). Mobile reminders study. Journal...
-
-    Returns:
-    authors = ["Ahmed, N.", "Brown, T."]
-    title = "Mobile reminders study"
-    """
-
     if not year_match:
         return None, None
 
-    # Everything before year is treated as authors
-    authors_text = raw[:year_match.start()].rstrip(" (").strip(" ,")
+    before_year = raw[:year_match.start()].strip()
 
-    authors = [
-        author.strip(" ,")
-        for author in re.split(r"\s+(?:and|&)\s+|\s*;\s*", authors_text)
-        if author.strip(" ,")
-    ]
+    quoted_title = re.search(
+        r"[‘“\"'](.+?)[’”\"']",
+        before_year,
+    )
 
-    # Everything after year starts with title
-    after_year = raw[year_match.end():].lstrip(" ).")
+    if quoted_title:
+        author_part = before_year[:quoted_title.start()].strip(" ,")
+        title = quoted_title.group(1).strip(" ,")
+    else:
+        parts = before_year.split(", ", 1)
+        author_part = parts[0].strip()
+        title = parts[1].strip() if len(parts) > 1 else None
 
-    # First sentence after year is treated as title
-    title = after_year.split(".", 1)[0].strip()
+    authors = None
 
-    return authors or None, title or None
+    if author_part:
+        author_part = re.sub(r",?\s+and\s+", ", ", author_part)
+        authors = [
+            author.strip()
+            for author in re.split(r",\s+(?=[A-Z])", author_part)
+            if author.strip()
+        ]
+
+    return authors, title
 
 
 def extract_references(text: str) -> list[Reference]:
@@ -97,15 +93,13 @@ def extract_references(text: str) -> list[Reference]:
 
     matches = list(NUMBERED_REFERENCE_RE.finditer(section))
 
-    entries = [
-        (
-            int(match.group("number")),
-            " ".join(match.group("body").split()),
-        )
-        for match in matches
-    ]
+    entries = []
 
-    # Backup method if references do not use [1], [2], etc.
+    for match in matches:
+        number = match.group("bracket") or match.group("plain")
+        raw = " ".join(match.group("body").split())
+        entries.append((int(number), raw))
+
     if not entries:
         entries = [
             (index, " ".join(line.split()))
@@ -116,34 +110,23 @@ def extract_references(text: str) -> list[Reference]:
     references = []
 
     for number, raw in entries:
-        author = AUTHOR_RE.search(raw)
         year = YEAR_RE.search(raw)
         doi = DOI_RE.search(raw)
         url = URL_RE.search(raw)
 
         authors, title = parse_authors_and_title(raw, year)
 
-        first_author = author.group(1).lower() if author else None
-        year_value = year.group(1).lower() if year else None
-
-        if matches:
-            key = str(number)
-        elif first_author and year_value:
-            key = f"{first_author}:{year_value}"
-        else:
-            key = str(number)
-
         references.append(
             Reference(
-                key=key,
+                key=str(number),
                 raw=raw,
                 number=number,
                 authors=authors,
-                first_author=first_author,
-                year=year_value,
+                first_author=authors[0] if authors else None,
+                year=year.group(1) if year else None,
                 title=title,
-                doi=doi.group(1) if doi else None,
-                url=url.group(0) if url else None,
+                doi=doi.group(0).rstrip(".,;") if doi else None,
+                url=url.group(0).rstrip(".,;") if url else None,
             )
         )
 
@@ -162,7 +145,7 @@ def map_citations(
     }
 
     by_author_year = {
-        f"{reference.first_author}:{reference.year}": reference
+        f"{reference.first_author.lower()}:{reference.year.lower()}": reference
         for reference in references
         if reference.first_author and reference.year
     }
@@ -173,6 +156,6 @@ def map_citations(
         if citation.style == "numeric":
             result[citation.key] = by_number.get(citation.key)
         else:
-            result[citation.key] = by_author_year.get(citation.key)
+            result[citation.key] = by_author_year.get(citation.key.lower())
 
     return result

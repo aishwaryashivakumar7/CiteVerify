@@ -50,8 +50,10 @@ def search_papers(query, limit=5):
 
 if __name__ == "__main__":
 
-    results = search_papers("Artificial Intelligence in Education")
-
+    results = search_papers(
+        "Creating the Computer Government Industry and High Technology",
+        limit=5
+    )
     for paper in results:
         print("\n----------------------------")
         print("Title:", paper["title"])
