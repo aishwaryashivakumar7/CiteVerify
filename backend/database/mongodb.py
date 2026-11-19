@@ -7,7 +7,7 @@ from bson import ObjectId
 load_dotenv()
 
 # Get MongoDB connection details
-MONGODB_URI = os.getenv("MONGODB_URI")
+MONGODB_URI = os.getenv("MONGO_URI")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "citeverify")
 
 # Connect to MongoDB
