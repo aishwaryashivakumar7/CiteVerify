@@ -1,3 +1,4 @@
+
 import sys
 
 sys.path.append("backend/extraction")
@@ -14,21 +15,48 @@ def extract_claims_and_citations_from_pdf(pdf_path):
     from an academic PDF.
     """
 
-    # Extract PDF text
+    print("PDF: reading text...", flush=True)
     text = extract_pdf_text(pdf_path)
 
-    # Extract individual components
-    claims = extract_claims(text)
-    citations = extract_citations(text)
-    references = extract_references(text)
-
-    # Map citations to references
-    citation_reference_map = map_citations(
-        citations,
-        references
+    print(
+        f"PDF: extracted {len(text)} characters",
+        flush=True,
     )
 
-    # Convert dataclass objects into dictionaries
+    print("PDF: extracting claims...", flush=True)
+    claims = extract_claims(text)
+
+    print(
+        f"PDF: found {len(claims)} claims",
+        flush=True,
+    )
+
+    print("PDF: extracting citations...", flush=True)
+    citations = extract_citations(text)
+
+    print(
+        f"PDF: found {len(citations)} citations",
+        flush=True,
+    )
+
+    print("PDF: extracting references...", flush=True)
+    references = extract_references(text)
+
+    print(
+        f"PDF: found {len(references)} references",
+        flush=True,
+    )
+
+    print(
+        "PDF: mapping citations to references...",
+        flush=True,
+    )
+
+    citation_reference_map = map_citations(
+        citations,
+        references,
+    )
+
     claims_data = [
         claim.to_dict()
         for claim in claims

@@ -2,39 +2,50 @@
 import { useState } from "react";
 import "./App.css";
 
-const demoResults = [
-  {
-    claim: "AI can improve student learning outcomes.",
-    status: "Supported",
-    evidence:
-      "The study reported improved learning outcomes in the evaluated group.",
-    highlight: "improved learning outcomes",
-    explanation: "The example evidence supports the general claim."
-  },
-  {
-    claim: "AI increases examination scores by exactly 40%.",
-    status: "Partially supported",
-    evidence:
-      "The study reported improvement, but did not establish a 40% increase.",
-    highlight: "did not establish a 40% increase",
-    explanation: "The exact percentage is not supported."
-  },
-  {
-    claim: "AI completely replaces teachers.",
-    status: "Needs review",
-    evidence: "",
-    highlight: "",
-    explanation: "No original source has been checked yet."
+const API_BASE = "http://127.0.0.1:8000";
+
+async function readResponse(response) {
+  const text = await response.text();
+  let data;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(`Server returned an invalid response (HTTP ${response.status}).`);
   }
-];
+  if (!response.ok) {
+    const detail = data?.detail;
+    const message = typeof detail === "string" ? detail : JSON.stringify(detail || data);
+    throw new Error(message || `HTTP ${response.status}`);
+  }
+  return data;
+}
+
+function normalizeResults(payload) {
+  const raw = Array.isArray(payload)
+    ? payload
+    : payload?.verification_results || payload?.results || payload?.verifications || [];
+
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry, index) => {
+    const status = String(entry.status || entry.verdict || entry.verification_status || "Needs review");
+    const evidence = entry.evidence || entry.supporting_evidence || entry.paper_abstract || "";
+    const explanation = entry.explanation || entry.reason || entry.message || "No explanation was returned by the backend.";
+    return {
+      claim: typeof entry.claim === "string" ? entry.claim : entry.claim?.text || entry.claim_text || `Claim ${index + 1}`,
+      status,
+      evidence: typeof evidence === "string" ? evidence : JSON.stringify(evidence),
+      highlight: typeof entry.highlight === "string" ? entry.highlight : "",
+      explanation: typeof explanation === "string" ? explanation : JSON.stringify(explanation),
+      citation: entry.citation_key || entry.citation || entry.doi || ""
+    };
+  });
+}
 
 function HighlightEvidence({ text, highlight }) {
   if (!highlight || !text.includes(highlight)) {
-    return <p>{text || "Evidence unavailable."}</p>;
+    return <p>{text || "Evidence unavailable. Independent review required."}</p>;
   }
-
   const index = text.indexOf(highlight);
-
   return (
     <p>
       {text.slice(0, index)}
@@ -49,199 +60,181 @@ function App() {
   const [showResults, setShowResults] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [stage, setStage] = useState("");
+  const [results, setResults] = useState([]);
+  const [documentId, setDocumentId] = useState("");
+  const [uploadInfo, setUploadInfo] = useState(null);
+  const [verificationData, setVerificationData] = useState(null);
 
   function handleFileChange(event) {
-    const selected = event.target.files[0];
-
+    const selected = event.target.files?.[0];
     setShowResults(false);
     setError("");
     setFile(null);
+    setResults([]);
+    setDocumentId("");
+    setUploadInfo(null);
+    setVerificationData(null);
 
     if (!selected) return;
-
-    if (
-      selected.type !== "application/pdf" &&
-      !selected.name.toLowerCase().endsWith(".pdf")
-    ) {
-      setError("❌ Please upload a PDF file only.");
+    if (selected.type !== "application/pdf" && !selected.name.toLowerCase().endsWith(".pdf")) {
+      setError("Please upload a PDF file only.");
       event.target.value = "";
       return;
     }
-
     if (selected.size > 10 * 1024 * 1024) {
-      setError("❌ PDF must be smaller than 10 MB.");
+      setError("PDF must be smaller than 10 MB.");
       event.target.value = "";
       return;
     }
-
     setFile(selected);
   }
 
-  function handleVerify() {
+  async function handleVerify() {
     if (!file || loading) return;
-
     setShowResults(false);
+    setError("");
     setLoading(true);
+    setResults([]);
+    setStage("Uploading PDF and extracting citations...");
 
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+
+      const upload = await readResponse(
+        await fetch(`${API_BASE}/upload-pdf`, {
+          method: "POST",
+          body: form
+        })
+      );
+      const id = upload.document_id;
+      if (!id) throw new Error("Backend did not return a document ID.");
+      setDocumentId(id);
+      setUploadInfo(upload);
+
+      setStage("Verifying extracted claims against citations...");
+      const verification = await readResponse(
+        await fetch(`${API_BASE}/verify-document/${encodeURIComponent(id)}`, {
+          method: "POST"
+        })
+      );
+      setVerificationData(verification);
+
+      let normalized = normalizeResults(verification);
+      if (!normalized.length) {
+        setStage("Loading saved verification results...");
+        const documentData = await readResponse(
+          await fetch(`${API_BASE}/documents/${encodeURIComponent(id)}`)
+        );
+        normalized = normalizeResults(documentData);
+      }
+
+      setResults(normalized);
       setShowResults(true);
-    }, 3000);
+    } catch (err) {
+      setError(`Verification failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+      setStage("");
+    }
   }
 
   function downloadReport() {
     const report = {
       project: "CiteVerify",
-      note: "DEMO DATA ONLY - Not verified against the uploaded PDF",
+      note: "Results returned by CiteVerify backend; automated checks require independent review.",
       generatedAt: new Date().toISOString(),
-      results: demoResults
+      filename: file?.name,
+      document_id: documentId,
+      extraction: uploadInfo,
+      verification: verificationData,
+      results
     };
-
-    const blob = new Blob(
-      [JSON.stringify(report, null, 2)],
-      { type: "application/json" }
-    );
-
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-
     link.href = url;
-    link.download = "citeverify-demo-report.json";
+    link.download = "citeverify-verification-report.json";
     document.body.appendChild(link);
     link.click();
     link.remove();
-
     URL.revokeObjectURL(url);
   }
+
+  const supportedCount = results.filter((result) =>
+    ["supported", "verified"].includes(result.status.trim().toLowerCase())
+  ).length;
 
   return (
     <div className="app">
       <h1>🔍 CiteVerify</h1>
       <h2>Don't Just Cite It. Prove It.</h2>
-
-      <p>
-        AI-Powered Scientific Claim and Citation
-        Verification System
-      </p>
+      <p>AI-Powered Scientific Claim and Citation Verification System</p>
 
       <section className="upload-section">
         <h3>📄 Upload Research Paper</h3>
-
-        <input
-          type="file"
-          accept=".pdf,application/pdf"
-          onChange={handleFileChange}
-        />
-
-        {error && (
-          <p className="error-message" role="alert">
-            {error}
-          </p>
-        )}
-
-        {file && (
-          <p>
-            Selected: <strong>{file.name}</strong>
-          </p>
-        )}
-
-        <button
-          disabled={!file || loading}
-          onClick={handleVerify}
-        >
-          {loading
-            ? "Analyzing..."
-            : "Preview Verification Dashboard"}
+        <input type="file" accept=".pdf,application/pdf" onChange={handleFileChange} />
+        {error && <p className="error-message" role="alert">{error}</p>}
+        {file && <p>Selected: <strong>{file.name}</strong></p>}
+        <button disabled={!file || loading} onClick={handleVerify}>
+          {loading ? "Analyzing..." : "Verify Research Paper"}
         </button>
-
         {loading && (
           <div className="loading-container" role="status">
             <div className="spinner"></div>
             <h3>🔍 Analyzing Research Paper...</h3>
-            <p>Preparing sample verification results...</p>
+            <p>{stage}</p>
           </div>
         )}
       </section>
 
-      {/* VERIFICATION RESULTS */}
       {showResults && (
         <section className="results">
           <h2>📊 Verification Results</h2>
-
           <p className="demo-notice">
-            DEMO DATA ONLY — These results are not
-            generated from the uploaded PDF.
+            Results from your backend. Automated evidence checks may need independent review.
           </p>
 
           <div className="stats">
-            <div>3 Claims</div>
-            <div>1 Supported</div>
-            <div>2 Need Attention</div>
+            <div>{results.length} Claims Checked</div>
+            <div>{supportedCount} Supported</div>
+            <div>{results.length - supportedCount} Need Attention</div>
           </div>
-
-          {demoResults.map((result, index) => (
+          {results.length === 0 && (
+            <p>No individual verification results were returned. Check the backend response.</p>
+          )}
+          {results.map((result, index) => (
             <div className="result-card" key={index}>
               <h3>Claim {index + 1}</h3>
-
               <p>{result.claim}</p>
-
-              <span
-                className={
-                  "status " +
-                  result.status
-                    .toLowerCase()
-                    .replaceAll(" ", "-")
-                }
-              >
+              <span className={`status ${result.status.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-")}`}>
                 {result.status}
               </span>
-
+              {result.citation && <p><strong>Citation:</strong> {result.citation}</p>}
               <h4>📌 Evidence</h4>
-
-              <HighlightEvidence
-                text={result.evidence}
-                highlight={result.highlight}
-              />
-
-              <p>
-                <strong>Explanation:</strong>{" "}
-                {result.explanation}
-              </p>
+              <HighlightEvidence text={result.evidence} highlight={result.highlight} />
+              <p><strong>Explanation:</strong> {result.explanation}</p>
             </div>
           ))}
-
           <div className="download-section">
             <h3>📥 Verification Report</h3>
-
-            <p>
-              Download the sample verification results
-              for your hackathon demonstration.
-            </p>
-
-            <button onClick={downloadReport}>
-              ⬇ Download Verification Report
-            </button>
+            <p>Download the results returned by your CiteVerify backend.</p>
+            <button onClick={downloadReport}>⬇ Download Verification Report</button>
           </div>
         </section>
       )}
 
-      {/* CINEMATIC RESEARCH STORY SECTION */}
       <section className="story-section">
         <div className="story-animation" aria-hidden="true">
           <div className="story-halo"></div>
-
           <div className="story-paper">
             <div className="story-paper-lines"></div>
             <div className="story-check">✓</div>
           </div>
         </div>
-
         <h2>Every claim has a story.</h2>
-
-        <p>
-          Explore the relationship between
-          scientific claims and their evidence.
-        </p>
+        <p>Explore the relationship between scientific claims and their evidence.</p>
       </section>
     </div>
   );
