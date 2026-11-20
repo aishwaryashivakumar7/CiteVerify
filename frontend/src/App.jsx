@@ -29,7 +29,12 @@ function normalizeResults(payload) {
   return raw.map((entry, index) => {
     const status = String(entry.status || entry.verdict || entry.verification_status || "Needs review");
     const evidence = entry.evidence || entry.supporting_evidence || entry.paper_abstract || "";
-    const explanation = entry.explanation || entry.reason || entry.message || "No explanation was returned by the backend.";
+    const explanation =
+  entry.explanation ||
+  entry.verification_results?.[0]?.explanation ||
+  entry.reason ||
+  entry.message ||
+  "No explanation was returned by the backend.";
     return {
       claim: typeof entry.claim === "string" ? entry.claim : entry.claim?.text || entry.claim_text || `Claim ${index + 1}`,
       status,
