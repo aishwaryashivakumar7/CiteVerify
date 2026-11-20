@@ -218,7 +218,18 @@ function App() {
               </span>
               {result.citation && <p><strong>Citation:</strong> {result.citation}</p>}
               <h4>📌 Evidence</h4>
-              <HighlightEvidence text={result.evidence} highlight={result.highlight} />
+              {result.evidence ? (
+  <HighlightEvidence
+    text={result.evidence}
+    highlight={result.highlight}
+  />
+) : (
+  <div className="evidence-notice">
+    <p><strong>Evidence Status:</strong> Not verified</p>
+    <p>No verified supporting evidence was retrieved.</p>
+    <p><strong>Reason:</strong> {result.explanation}</p>
+  </div>
+)}
               <p><strong>Explanation:</strong> {result.explanation}</p>
             </div>
           ))}
