@@ -41,7 +41,12 @@ function normalizeResults(payload) {
       evidence: typeof evidence === "string" ? evidence : JSON.stringify(evidence),
       highlight: typeof entry.highlight === "string" ? entry.highlight : "",
       explanation: typeof explanation === "string" ? explanation : JSON.stringify(explanation),
-      citation: entry.citation_key || entry.citation || entry.doi || ""
+      citation:
+  entry.citation_keys?.join(", ") ||
+  entry.citation_key ||
+  entry.citation ||
+  entry.doi ||
+  ""
     };
   });
 }
@@ -231,6 +236,10 @@ function App() {
   </div>
 )}
               <p><strong>Explanation:</strong> {result.explanation}</p>
+              <p>
+  <strong>Citations detected:</strong>{" "}
+  {result.citation || "None detected"}
+</p>
             </div>
           ))}
           <div className="download-section">
